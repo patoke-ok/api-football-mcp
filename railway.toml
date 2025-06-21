@@ -1,0 +1,11 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npm run build && npm start"
+
+[[services]]
+name = "api-football-mcp"
+
+[services.variables]
+NODE_ENV = "production"
