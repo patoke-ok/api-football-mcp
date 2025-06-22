@@ -17,11 +17,16 @@ app.get('/', (req, res) => {
   res.json({ 
     status: 'OK', 
     message: 'MCP Server for Football Betting Analysis',
-    transport: 'streamable-http'
+    transport: 'streamable-http',
+    endpoints: {
+      mcp: '/mcp (POST for JSON-RPC, GET for SSE)',
+      sse: '/sse (SSE only)',
+      health: '/'
+    }
   });
 });
 
-// MCP Streamable HTTP endpoint
+// MCP Streamable HTTP endpoint (POST)
 app.post('/mcp', async (req, res) => {
   try {
     const { jsonrpc, method, params, id } = req.body;
@@ -169,19 +174,113 @@ app.post('/mcp', async (req, res) => {
   }
 });
 
-// GET endpoint for session info (required by some MCP clients)
+// SSE endpoint para compatibilidad con clientes que esperan SSE (GET /mcp)
 app.get('/mcp', (req, res) => {
-  const sessionId = req.headers['mcp-session-id'];
-  if (sessionId && sessions.has(sessionId)) {
-    res.json({
-      sessionId: sessionId,
-      status: "active"
-    });
-  } else {
-    res.status(404).json({
-      error: "Session not found"
-    });
-  }
+  // Headers SSE requeridos
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  });
+
+  // Enviar información inicial del servidor
+  const serverInfo = {
+    protocolVersion: "2024-11-05",
+    capabilities: {
+      tools: {},
+      resources: {}
+    },
+    serverInfo: {
+      name: "football-betting-mcp",
+      version: "1.0.0"
+    },
+    tools: [
+      {
+        name: "search_teams",
+        description: "Search for football teams for betting analysis",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Team name to search" }
+          },
+          required: ["query"]
+        }
+      },
+      {
+        name: "get_fixtures", 
+        description: "Get upcoming football fixtures for betting analysis",
+        inputSchema: {
+          type: "object",
+          properties: {
+            league: { type: "string", description: "League ID", default: "39" }
+          }
+        }
+      }
+    ]
+  };
+
+  // Enviar como evento SSE
+  res.write(`data: ${JSON.stringify(serverInfo)}\n\n`);
+
+  // Mantener conexión viva
+  const keepAlive = setInterval(() => {
+    res.write(`data: {"ping": ${Date.now()}}\n\n`);
+  }, 30000);
+
+  // Limpiar al cerrar
+  req.on('close', () => {
+    clearInterval(keepAlive);
+  });
+
+  req.on('error', () => {
+    clearInterval(keepAlive);
+  });
+});
+
+// Endpoint alternativo para SSE
+app.get('/sse', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+  });
+
+  const tools = [
+    {
+      name: "search_teams",
+      description: "Search for football teams for betting analysis",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Team name to search" }
+        },
+        required: ["query"]
+      }
+    },
+    {
+      name: "get_fixtures", 
+      description: "Get upcoming football fixtures for betting analysis",
+      inputSchema: {
+        type: "object",
+        properties: {
+          league: { type: "string", description: "League ID", default: "39" }
+        }
+      }
+    }
+  ];
+
+  res.write(`data: ${JSON.stringify({ tools })}\n\n`);
+
+  const keepAlive = setInterval(() => {
+    res.write(`data: {"heartbeat": ${Date.now()}}\n\n`);
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+  });
 });
 
 // Search teams function
@@ -247,5 +346,10 @@ async function getFixtures(leagueId) {
 
 app.listen(port, () => {
   console.log(`MCP Server running on port ${port}`);
-  console.log('Protocol: JSON-RPC 2.0 over Streamable HTTP');
+  console.log('Protocol: JSON-RPC 2.0 over Streamable HTTP + SSE compatibility');
+  console.log('Endpoints:');
+  console.log('  POST /mcp - JSON-RPC 2.0');
+  console.log('  GET /mcp - SSE stream');
+  console.log('  GET /sse - SSE stream (alternative)');
+  console.log('  GET / - Health check');
 });
