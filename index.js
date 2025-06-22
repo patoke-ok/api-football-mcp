@@ -12,8 +12,55 @@ const BASE_URL = 'https://v3.football.api-sports.io';
 // Store sessions
 const sessions = new Map();
 
-// Health check
+// Root endpoint para UChat (SSE)
 app.get('/', (req, res) => {
+  // Headers SSE requeridos
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+  });
+
+  const tools = {
+    tools: [
+      {
+        name: "search_teams",
+        description: "Search for football teams for betting analysis",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Team name to search" }
+          },
+          required: ["query"]
+        }
+      },
+      {
+        name: "get_fixtures", 
+        description: "Get upcoming football fixtures for betting analysis",
+        inputSchema: {
+          type: "object",
+          properties: {
+            league: { type: "string", description: "League ID", default: "39" }
+          }
+        }
+      }
+    ]
+  };
+
+  res.write(`data: ${JSON.stringify(tools)}\n\n`);
+
+  const keepAlive = setInterval(() => {
+    res.write(`data: {"heartbeat": ${Date.now()}}\n\n`);
+  }, 30000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+  });
+});
+
+// Health check alternativo
+app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     message: 'MCP Server for Football Betting Analysis',
@@ -21,7 +68,7 @@ app.get('/', (req, res) => {
     endpoints: {
       mcp: '/mcp (POST for JSON-RPC, GET for SSE)',
       sse: '/sse (SSE only)',
-      health: '/'
+      health: '/health'
     }
   });
 });
@@ -348,8 +395,9 @@ app.listen(port, () => {
   console.log(`MCP Server running on port ${port}`);
   console.log('Protocol: JSON-RPC 2.0 over Streamable HTTP + SSE compatibility');
   console.log('Endpoints:');
+  console.log('  GET / - SSE stream (UChat compatible)');
   console.log('  POST /mcp - JSON-RPC 2.0');
   console.log('  GET /mcp - SSE stream');
   console.log('  GET /sse - SSE stream (alternative)');
-  console.log('  GET / - Health check');
+  console.log('  GET /health - Health check');
 });
